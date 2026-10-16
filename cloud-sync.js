@@ -1,94 +1,84 @@
 (function(){
 'use strict';
 
-/* ===== 配置：在这里填你自己的信息 ===== */
-const CONFIG = {
-  token:  "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",
-  user:   "asaln",
-  repo:   "kaogong-plan",
-  branch: "main",
-  path:   "progress.json"
-};
-/* ===================================== */
+let cloudCfg = null;
+let cloudSha = null;
+const KEY = 'cloudConfig';
+const CD = 1500; // 防抖延迟 1.5 秒
+let timer = null;
+let saving = false;
 
-const KEY = 'kaogong_plan_cloud_v1';
-const CD  = 1500;                 // 本地改动后多久上传
-let timer = null, saving = false, lastSha = null;
-
-/* ---- 自动把配置写入 localStorage ---- */
-function applyConfig(){
-  localStorage.setItem('cloudConfig', JSON.stringify({
-    token: CONFIG.token, user: CONFIG.user,
-    repo: CONFIG.repo, branch: CONFIG.branch
-  }));
+// ===== 读取配置 =====
+function loadCfg(){
+  try { cloudCfg = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e) {}
+  return !!cloudCfg;
 }
 
-/* ---- 读：本地存了什么就同步什么 ---- */
+// ===== 收集所有本地进度数据 =====
 function collect(){
   const out = {};
   for (let i = 0; i < localStorage.length; i++){
     const k = localStorage.key(i);
-    if (!k) continue;
+    if (!k || k === KEY) continue;
     try { out[k] = JSON.parse(localStorage.getItem(k)); }
     catch(e){ out[k] = localStorage.getItem(k); }
   }
   return out;
 }
 
-/* ---- 写：把云端数据写回 localStorage ---- */
-function applyRemote(obj){
-  let changed = 0;
-  for (const k in obj){
-    const v = (typeof obj[k] === 'string') ? obj[k] : JSON.stringify(obj[k]);
-    if (localStorage.getItem(k) !== v){ localStorage.setItem(k, v); changed++; }
-  }
-  return changed;
-}
+// ===== base64 编码 =====
+function b64(s){ return btoa(unescape(encodeURIComponent(s))); }
 
-/* ---- GitHub REST 封装 ---- */
-function gh(method, body){
+// ===== GitHub API 封装 =====
+function gh(method, path, body){
+  if (!cloudCfg) return Promise.reject('no config');
   return fetch(
-    `https://api.github.com/repos/${CONFIG.user}/${CONFIG.repo}/contents/${CONFIG.path}?ref=${CONFIG.branch}`,
+    `https://api.github.com/repos/${cloudCfg.user}/${cloudCfg.repo}/contents/${path}?ref=${cloudCfg.branch}`,
     {
       method: method,
       headers: {
-        'Authorization': 'token ' + CONFIG.token,
-        'Content-Type':  'application/json',
-        'Accept':        'application/vnd.github.v3+json'
+        'Authorization': 'token ' + cloudCfg.token,
+        'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json'
       },
       body: body ? JSON.stringify(body) : undefined
     }
   ).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
 }
 
-function b64(s){ return btoa(unescape(encodeURIComponent(s))); }
-
-/* ---- 上传 ---- */
+// ===== 上传到云端 =====
 function push(){
-  if (saving) return;
+  if (!cloudCfg || !cloudCfg.token || saving) return;
   saving = true;
-  const content = b64(JSON.stringify(collect(), null, 0));
-  const body = lastSha
-    ? { message: 'chore: sync progress', content: content, sha: lastSha, branch: CONFIG.branch }
-    : { message: 'chore: init progress', content: content, branch: CONFIG.branch };
-  gh('PUT', body)
-    .then(d => { lastSha = d.content.sha; console.log('[cloud] 已上传'); })
+  const content = b64(JSON.stringify(collect()));
+  const body = cloudSha
+    ? { message: 'sync ' + new Date().toISOString(), content: content, sha: cloudSha, branch: cloudCfg.branch }
+    : { message: 'init progress', content: content, branch: cloudCfg.branch };
+
+  gh('PUT', 'progress.json', body)
+    .then(d => { cloudSha = d.content.sha; console.log('[cloud] 已上传'); })
     .catch(e => {
-      if (String(e).indexOf('409') > -1){ lastSha = null; push(); }   // 冲突，重试
+      if (String(e).indexOf('409') > -1){ cloudSha = null; push(); }
       else console.warn('[cloud] 上传失败', e);
     })
     .finally(() => { saving = false; });
 }
 
-/* ---- 下载 ---- */
+// ===== 从云端拉取 =====
 function pull(){
-  gh('GET')
+  if (!cloudCfg) return;
+  gh('GET', 'progress.json')
     .then(d => {
-      lastSha = d.sha;
+      cloudSha = d.sha;
       const remote = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\n/g, '')))));
-      const n = applyRemote(remote);
-      if (n > 0){
-        console.log('[cloud] 拉取并写入 ' + n + ' 项，正在刷新…');
+      let changed = 0;
+      for (const k in remote){
+        if (k === KEY) continue;
+        const v = (typeof remote[k] === 'string') ? remote[k] : JSON.stringify(remote[k]);
+        if (localStorage.getItem(k) !== v){ localStorage.setItem(k, v); changed++; }
+      }
+      if (changed > 0){
+        console.log('[cloud] 拉取了 ' + changed + ' 项，刷新页面…');
         if (typeof renderDays === 'function') renderDays();
         if (typeof renderStages === 'function') renderStages();
       } else {
@@ -98,26 +88,29 @@ function pull(){
     .catch(e => console.warn('[cloud] 拉取失败', e));
 }
 
-/* ---- 调度：本地有改动就稍后上传 ---- */
+// ===== 防抖上传 =====
 function schedulePush(){
   clearTimeout(timer);
   timer = setTimeout(push, CD);
 }
 
-/* ---- 初始化 ---- */
-function init(){
-  applyConfig();
-  pull();                        // 打开页面先拉一次
-  schedulePush();                // 立刻把自己这边的数据也传上去
-}
-
-/* ---- 暴露给控制台手动调用 ---- */
+// ===== 暴露给控制台 =====
 window.cloudSync = { push, pull, forceSync: push };
 
-/* ---- 监听：别的标签页改动也上传 ---- */
-window.addEventListener('storage', schedulePush);
+// ===== 拦截 localStorage 写入自动同步 =====
+const _origSet = localStorage.setItem.bind(localStorage);
+localStorage.setItem = function(k, v){
+  _origSet(k, v);
+  if (k === KEY) { cloudCfg = JSON.parse(v); return; }
+  schedulePush();
+};
 
-/* ---- 页面加载完成后启动 ---- */
+// ===== 页面加载完成：读配置 → 拉取 =====
+function init(){
+  if (!loadCfg()){ console.log('[cloud] 未配置云端，跳过同步'); return; }
+  pull();
+}
+
 if (document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', init);
 } else {
