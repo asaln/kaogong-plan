@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -343,8 +343,8 @@ function renderDays(){
   tb.innerHTML=rows.map(d=>{
     const k=dayKey(d); const st=state[k]||{};
     const cbs=d.items.map((it,i)=>{
-      const ck=st[i]? 'checked' : '';
-      const dl=st[i]? 'done' : '';
+      const ck=(st.tasks && st.tasks[i])? 'checked' : '';
+      const dl=(st.tasks && st.tasks[i])? 'done' : '';
       return `<li class="${dl}"><input type="checkbox" data-d="${d.date}" data-i="${i}" ${ck}><span>${it}</span></li>`;
     }).join('');
     const rowCls = d.pct>=100? 'done-row':(d.pct>0?'part-row':'');
