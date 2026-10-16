@@ -116,5 +116,71 @@ if (document.readyState === 'loading'){
 } else {
   init();
 }
+// ===== 弹窗控制 =====
+window.showCloudConfig = function() {
+  const m = document.getElementById('cloudMask');
+  const b = document.getElementById('cloudBox');
+  if (!m || !b) { console.warn('[cloud] 弹窗元素不存在'); return; }
+  m.style.display = 'block';
+  b.style.display = 'block';
+  if (cloudCfg) {
+    const t = document.getElementById('cloudToken');
+    const u = document.getElementById('cloudUser');
+    const r = document.getElementById('cloudRepo');
+    const br = document.getElementById('cloudBranch');
+    if (t) t.value = cloudCfg.token || '';
+    if (u) u.value = cloudCfg.user || '';
+    if (r) r.value = cloudCfg.repo || '';
+    if (br) br.value = cloudCfg.branch || 'main';
+  }
+};
+
+window.closeCloudConfig = function() {
+  const m = document.getElementById('cloudMask');
+  const b = document.getElementById('cloudBox');
+  if (m) m.style.display = 'none';
+  if (b) b.style.display = 'none';
+};
+
+window.saveCloudConfig = async function() {
+  const token = document.getElementById('cloudToken').value.trim();
+  const user  = document.getElementById('cloudUser').value.trim();
+  const repo  = document.getElementById('cloudRepo').value.trim();
+  const branch= document.getElementById('cloudBranch').value.trim() || 'main';
+
+  if (!token || !user || !repo) {
+    const st = document.getElementById('cloudStatus');
+    if (st) st.innerHTML = '<span style="color:#c62828;">✗ 请填写完整信息</span>';
+    return;
+  }
+
+  cloudCfg = { token, user, repo, branch };
+  try { localStorage.setItem(KEY, JSON.stringify(cloudCfg)); } catch(e) {}
+
+  const st = document.getElementById('cloudStatus');
+  if (st) st.innerHTML = '<span style="color:#2e7d32;">测试中...</span>';
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${user}/${repo}/contents/progress.json?ref=${branch}`,
+      { headers: { 'Authorization': 'token ' + token, 'Accept': 'application/vnd.github.v3+json' } }
+    );
+    if (res.status === 200) {
+      const d = await res.json();
+      cloudSha = d.sha;
+      const p = JSON.parse(atob(d.content.replace(/\n/g,'')));
+      if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！云端有 ' + Object.keys(p).length + ' 条记录</span>';
+      // 自动拉取
+      loadCfg();
+      pull();
+    } else if (res.status === 404) {
+      if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！首次使用，打卡后将自动创建文件</span>';
+    } else {
+      throw new Error('HTTP ' + res.status);
+    }
+  } catch(e) {
+    if (st) st.innerHTML = '<span style="color:#c62828;">✗ 连接失败：' + e.message + '</span>';
+  }
+};
 
 })();
