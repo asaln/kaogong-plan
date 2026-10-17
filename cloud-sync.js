@@ -7,13 +7,15 @@ const KEY = 'cloudConfig';
 const CD = 1500;
 let timer = null;
 let saving = false;
-let isSavingConfig = false;
+let isPulling = false;   // 拉取中不触发上传
 
+// ===== 读配置 =====
 function loadCfg(){
   try { cloudCfg = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e) {}
   return !!cloudCfg;
 }
 
+// ===== 收集本地所有数据 =====
 function collect(){
   const out = {};
   for (let i = 0; i < localStorage.length; i++){
@@ -27,6 +29,7 @@ function collect(){
 
 function b64(s){ return btoa(unescape(encodeURIComponent(s))); }
 
+// ===== GitHub API =====
 function gh(method, path, body){
   if (!cloudCfg) return Promise.reject('no config');
   return fetch(
@@ -43,6 +46,7 @@ function gh(method, path, body){
   ).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); });
 }
 
+// ===== 上传 =====
 function push(){
   if (!cloudCfg || !cloudCfg.token || saving) return;
   saving = true;
@@ -59,8 +63,10 @@ function push(){
     .finally(() => { saving = false; });
 }
 
+// ===== 拉取（用原始 setItem，不触发上传） =====
 function pull(){
   if (!cloudCfg) return;
+  isPulling = true;
   gh('GET', 'progress.json')
     .then(d => {
       cloudSha = d.sha;
@@ -69,22 +75,31 @@ function pull(){
       for (const k in remote){
         if (k === KEY) continue;
         const v = (typeof remote[k] === 'string') ? remote[k] : JSON.stringify(remote[k]);
-        if (localStorage.getItem(k) !== v){ localStorage.setItem(k, v); changed++; }
+        if (localStorage.getItem(k) !== v){
+          _origSet(k, v);   // 直接写，不触发 schedulePush
+          changed++;
+        }
       }
       if (changed > 0){
         console.log('[cloud] 拉取了 ' + changed + ' 项');
         if (typeof renderDays === 'function') renderDays();
         if (typeof renderStages === 'function') renderStages();
       }
+      setTimeout(()=>{ isPulling = false; }, 500);
     })
-    .catch(e => console.warn('[cloud] 拉取失败', e));
+    .catch(e => {
+      console.warn('[cloud] 拉取失败', e);
+      isPulling = false;
+    });
 }
 
+// ===== 防抖上传 =====
 function schedulePush(){
   clearTimeout(timer);
   timer = setTimeout(push, CD);
 }
 
+// ===== 弹窗 =====
 window.showCloudConfig = function() {
   var m = document.getElementById('cloudMask');
   var b = document.getElementById('cloudBox');
@@ -111,7 +126,6 @@ window.closeCloudConfig = function() {
 };
 
 window.saveCloudConfig = async function() {
-  isSavingConfig = true;
   var token = document.getElementById('cloudToken').value.trim();
   var user  = document.getElementById('cloudUser').value.trim();
   var repo  = document.getElementById('cloudRepo').value.trim();
@@ -120,7 +134,6 @@ window.saveCloudConfig = async function() {
 
   if (!token || !user || !repo) {
     if (st) st.innerHTML = '<span style="color:#c62828;">✗ 请填写完整信息</span>';
-    isSavingConfig = false;
     return;
   }
 
@@ -139,33 +152,42 @@ window.saveCloudConfig = async function() {
       cloudSha = d.sha;
       var p = JSON.parse(atob(d.content.replace(/\n/g,'')));
       if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！云端有 ' + Object.keys(p).length + ' 条记录</span>';
-      setTimeout(function(){ loadCfg(); pull(); isSavingConfig = false; }, 600);
+      // 先拉云端数据
+      isPulling = true;
+      gh('GET', 'progress.json').then(function(dd){
+        cloudSha = dd.sha;
+        var remote = JSON.parse(decodeURIComponent(escape(atob(dd.content.replace(/\n/g, '')))));
+        for (var k in remote){ if (k !== KEY) _origSet(k, typeof remote[k]==='string'?remote[k]:JSON.stringify(remote[k])); }
+        if (typeof renderDays === 'function') renderDays();
+        if (typeof renderStages === 'function') renderStages();
+        setTimeout(function(){ isPulling = false; }, 500);
+      });
     } else if (res.status === 404) {
-      if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！首次使用，打卡后将自动创建文件</span>';
-      isSavingConfig = false;
+      if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！首次使用</span>';
     } else {
       throw new Error('HTTP ' + res.status);
     }
   } catch(e) {
     if (st) st.innerHTML = '<span style="color:#c62828;">✗ 连接失败：' + e.message + '</span>';
-    isSavingConfig = false;
   }
 };
 
 window.cloudSync = { push: push, pull: pull, forceSync: push };
 
+// ===== 劫持 localStorage.setItem =====
 const _origSet = localStorage.setItem.bind(localStorage);
 localStorage.setItem = function(k, v){
   _origSet(k, v);
   if (k === KEY) { cloudCfg = JSON.parse(v); return; }
-  if (isSavingConfig) return;
-  schedulePush();
+  if (isPulling) return;          // 拉取中不触发上传
+  schedulePush();                  // 其他写入（打卡）触发上传
 };
 
+// ===== 页面加载 =====
 function init(){
   if (!loadCfg()){ console.log('[cloud] 未配置云端'); return; }
-  pull();
-  setTimeout(push, CD);
+  pull();                          // 先拉
+  setTimeout(push, 3000);          // 3秒后把本地数据推上去（确保不冲突）
 }
 
 if (document.readyState === 'loading'){
