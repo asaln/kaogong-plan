@@ -84,12 +84,10 @@ function schedulePush(){
   timer = setTimeout(push, CD);
 }
 
-// ===== 弹窗 =====
 window.showCloudConfig = function() {
   console.log('[cloud] showCloudConfig called');
   var m = document.getElementById('cloudMask');
   var b = document.getElementById('cloudBox');
-  console.log('[cloud] mask:', m, 'box:', b);
   if (!m || !b) { alert('弹窗元素不存在！mask=' + !!m + ' box=' + !!b); return; }
   m.style.display = 'block';
   b.style.display = 'block';
@@ -139,8 +137,7 @@ window.saveCloudConfig = async function() {
       cloudSha = d.sha;
       var p = JSON.parse(atob(d.content.replace(/\n/g,'')));
       if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！云端有 ' + Object.keys(p).length + ' 条记录</span>';
-      loadCfg();
-      pull();
+      setTimeout(function(){ loadCfg(); pull(); }, 600);
     } else if (res.status === 404) {
       if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！首次使用，打卡后将自动创建文件</span>';
     } else {
@@ -157,12 +154,12 @@ const _origSet = localStorage.setItem.bind(localStorage);
 localStorage.setItem = function(k, v){
   _origSet(k, v);
   if (k === KEY) { cloudCfg = JSON.parse(v); return; }
-  schedulePush();
 };
 
 function init(){
   if (!loadCfg()){ console.log('[cloud] 未配置云端'); return; }
   pull();
+  setTimeout(push, CD);
 }
 
 if (document.readyState === 'loading'){
