@@ -7,6 +7,7 @@ const KEY = 'cloudConfig';
 const CD = 1500;
 let timer = null;
 let saving = false;
+let isSavingConfig = false;
 
 function loadCfg(){
   try { cloudCfg = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e) {}
@@ -85,10 +86,9 @@ function schedulePush(){
 }
 
 window.showCloudConfig = function() {
-  console.log('[cloud] showCloudConfig called');
   var m = document.getElementById('cloudMask');
   var b = document.getElementById('cloudBox');
-  if (!m || !b) { alert('弹窗元素不存在！mask=' + !!m + ' box=' + !!b); return; }
+  if (!m || !b) { alert('弹窗元素不存在！'); return; }
   m.style.display = 'block';
   b.style.display = 'block';
   if (cloudCfg) {
@@ -111,6 +111,7 @@ window.closeCloudConfig = function() {
 };
 
 window.saveCloudConfig = async function() {
+  isSavingConfig = true;
   var token = document.getElementById('cloudToken').value.trim();
   var user  = document.getElementById('cloudUser').value.trim();
   var repo  = document.getElementById('cloudRepo').value.trim();
@@ -119,6 +120,7 @@ window.saveCloudConfig = async function() {
 
   if (!token || !user || !repo) {
     if (st) st.innerHTML = '<span style="color:#c62828;">✗ 请填写完整信息</span>';
+    isSavingConfig = false;
     return;
   }
 
@@ -137,14 +139,16 @@ window.saveCloudConfig = async function() {
       cloudSha = d.sha;
       var p = JSON.parse(atob(d.content.replace(/\n/g,'')));
       if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！云端有 ' + Object.keys(p).length + ' 条记录</span>';
-      setTimeout(function(){ loadCfg(); pull(); }, 600);
+      setTimeout(function(){ loadCfg(); pull(); isSavingConfig = false; }, 600);
     } else if (res.status === 404) {
       if (st) st.innerHTML = '<span style="color:#2e7d32;">✓ 连接成功！首次使用，打卡后将自动创建文件</span>';
+      isSavingConfig = false;
     } else {
       throw new Error('HTTP ' + res.status);
     }
   } catch(e) {
     if (st) st.innerHTML = '<span style="color:#c62828;">✗ 连接失败：' + e.message + '</span>';
+    isSavingConfig = false;
   }
 };
 
@@ -154,6 +158,8 @@ const _origSet = localStorage.setItem.bind(localStorage);
 localStorage.setItem = function(k, v){
   _origSet(k, v);
   if (k === KEY) { cloudCfg = JSON.parse(v); return; }
+  if (isSavingConfig) return;
+  schedulePush();
 };
 
 function init(){
