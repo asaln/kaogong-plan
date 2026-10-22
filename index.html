@@ -1,26 +1,13 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>考公备考计划表 2026.10.15-2027.11.27（国考前）</title>
-<link rel="stylesheet" href="style.css">
-<script>
-/* 先加载任务数据，再加载主逻辑 */
-window.DATA = null;
-window.DATA_READY = false;
-window.DATA_CALLBACKS = [];
-function onDataLoaded(cb){ if(window.DATA_READY) cb(); else window.DATA_CALLBACKS.push(cb); }
-</script>
-<script>
-fetch('data.json', {cache:'no-cache'})
-  .then(r => { if(!r.ok) throw new Error('data.json 加载失败 HTTP '+r.status); return r.json(); })
-  .then(d => { window.DATA = d; window.DATA_READY = true; window.DATA_CALLBACKS.forEach(c=>c()); })
-  .catch(e => { console.error(e); document.body.insertAdjacentHTML('afterbegin','<div style="background:#c62828;color:#fff;padding:14px;text-align:center;">⚠ 任务数据加载失败：'+e.message+'。请确认 data.json 与本文件在同一目录。</div>'); });
-</script>
-<script src="app.js"></script>
+<link rel="stylesheet" href="./style.css">
 </head>
 <body>
+
 <div class="wrap">
 <header>
   <h1>📚 考公备考计划表 · 2026.10.15 - 2027.11.27（国考前）</h1>
@@ -43,7 +30,6 @@ fetch('data.json', {cache:'no-cache'})
   <button class="ghost" onclick="exportData()">⬇ 导出备份</button>
   <button class="ghost" onclick="document.getElementById('importFile').click()">⬆ 导入备份</button>
   <input type="file" id="importFile" accept="application/json,.json" style="display:none;">
-  <button class="ghost" onclick="showCloudConfig()" style="background:#e8f5e9;color:#2e7d32;font-weight:600;">☁ 云端同步</button>
   <button class="ghost" onclick="backToToday()" style="background:#fff3e0;border-color:#ffb74d;color:#e65100;font-weight:600;">📍 回到今日</button>
   <button class="ghost" onclick="addNewDay()">＋ 新增一天</button>
   <button class="ghost" onclick="clearAll()">✖ 清空</button>
@@ -112,8 +98,8 @@ fetch('data.json', {cache:'no-cache'})
   <p><b>⑥ 打印：</b>点"打印"可打印当前筛选结果，贴墙对照使用。</p>
   <p><b>⑦ 多端：</b>本文件是纯 HTML，任何电脑/手机浏览器都能直接打开，无需安装 Office 或 WPS。</p>
   <p><b>⑧ 时间：</b>所有时间写进任务描述（如 06:50-07:15），不做时区换算，不会有时间错乱。</p>
-  <p><b>⑨ 改任务：</b>点任务文字或「✎」打开编辑框，<b>每行一项、回车换行</b>，清空某行即删除该项。点「🗑」删除当天，「↺」恢复该天原始任务。<b>改过的任务会自动保存，刷新和换设备都不会丢。</b></p>
-  <p><b>⑩ 多端同步：</b>点「☁ 云端同步」填一次 Token（只授权这一个仓库），之后打卡、改任务会<b>自动上传</b>；换手机/电脑/浏览器，打开网页点一次「☁ → 立即拉取」即可看到全部内容。重要进度仍建议定期「导出备份」双保险。</p>
+  <p><b>⑨ 改任务：</b>双击任意任务文字可直接修改，清空整行文字即删除该项。也可点当天右侧「✎ 编辑」整行重写、点「🗑」删除当天。改乱了点工具栏「↺ 恢复初始任务」一键还原全部原始任务（打卡进度、用时、备注都会保留）。</p>
+  <p><b>⑩ 同步：</b>打卡数据存在本机浏览器本地，换设备或换浏览器不会自动同步，重要进度请定期「导出备份」。</p>
 </section>
 </div>
 <div id="tip"></div>
@@ -125,46 +111,13 @@ fetch('data.json', {cache:'no-cache'})
     <button class="cbtn ok" id="confirmOk">确认</button>
     <button class="cbtn cancel" id="confirmCancel">取消</button>
   </div>
-<!-- 任务编辑弹窗（多行 textarea，一行一条任务，允许换行） -->
-<div id="taskEditorMask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:210;"></div>
-<div id="taskEditorBox" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:211;width:min(560px,94vw);padding:18px 20px;">
-  <div style="font-size:16px;font-weight:700;color:#1a237e;margin-bottom:4px;" id="taskEditorTitle">编辑任务</div>
-  <div style="font-size:12px;color:#888;margin-bottom:10px;">每行一项任务，回车换行；留空的行会被忽略；删除某行即删除该任务。</div>
-  <textarea id="taskEditor" rows="10" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #b0bec5;border-radius:8px;font-size:14px;line-height:1.7;resize:vertical;font-family:inherit;"></textarea>
-  <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:14px;">
-    <button class="cbtn cancel" onclick="closeTaskEditor()">取消</button>
-    <button class="cbtn ok" style="background:#3949ab;" onclick="saveTaskEditor()">保存</button>
-  </div>
 </div>
 
-<!-- 云端同步配置弹窗 -->
-<div id="cloudMask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:220;"></div>
-<div id="cloudBox" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#fff;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.25);z-index:221;width:min(440px,94vw);padding:18px 20px;">
-  <div style="font-size:16px;font-weight:700;color:#1a237e;margin-bottom:8px;">☁ 云端多端同步</div>
-  <div style="font-size:12px;color:#666;line-height:1.7;margin-bottom:12px;">配置一次即可在手机/电脑/不同浏览器之间自动同步。Token 只存在你本机浏览器里，不上传、不公开。</div>
-  <div style="font-size:12px;color:#c62828;line-height:1.7;background:#fff3e0;border-radius:8px;padding:8px 10px;margin-bottom:12px;">
-    ⚠ 请务必在 GitHub 新建一个<strong>只授权这一个仓库</strong>的 Fine-grained Token（权限选 Contents 读写），不要用全权限 Token。
-  </div>
-  <div style="display:grid;gap:8px;">
-    <label style="font-size:12px;color:#555;">Token<input type="password" id="cloudToken" placeholder="ghp_xxx" style="width:100%;margin-top:3px;padding:7px 9px;border:1px solid #ccc;border-radius:6px;font-size:13px;box-sizing:border-box;"></label>
-    <label style="font-size:12px;color:#555;">用户名<input type="text" id="cloudUser" placeholder="GitHub 用户名" style="width:100%;margin-top:3px;padding:7px 9px;border:1px solid #ccc;border-radius:6px;font-size:13px;box-sizing:border-box;"></label>
-    <label style="font-size:12px;color:#555;">仓库名<input type="text" id="cloudRepo" placeholder="kaogong-plan" style="width:100%;margin-top:3px;padding:7px 9px;border:1px solid #ccc;border-radius:6px;font-size:13px;box-sizing:border-box;"></label>
-    <label style="font-size:12px;color:#555;">分支<input type="text" id="cloudBranch" placeholder="main" value="main" style="width:100%;margin-top:3px;padding:7px 9px;border:1px solid #ccc;border-radius:6px;font-size:13px;box-sizing:border-box;"></label>
-  </div>
-  <div id="cloudStatus" style="font-size:12px;margin-top:10px;min-height:16px;"></div>
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;flex-wrap:wrap;">
-    <button onclick="cloudSync && cloudSync.pull && cloudSync.pull()" style="padding:6px 12px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;font-size:12px;">⇩ 立即拉取</button>
-    <div style="display:flex;gap:10px;">
-      <button class="cbtn cancel" onclick="closeCloudConfig()">取消</button>
-      <button class="cbtn ok" style="background:#3949ab;" onclick="saveCloudConfig()">保存并测试</button>
-    </div>
-  </div>
-</div>
 
 </div>
 
-<script>/* 数据改为外部 data.json，逻辑改为 app.js，见 head */</script>
-</div>
+<div id="tip"></div>
+<script src="./app.js"></script>
+<script src="./cloud-sync.js"></script>
 </body>
-</html>
 </html>
